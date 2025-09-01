@@ -5,7 +5,8 @@ import EnhancedToastChecker from './enhanced-toast-checker.mjs';
 import JSXHardcodedChecker from './jsx-hardcoded-checker.mjs';
 
 class IntegratedHardcodingChecker {
-  constructor() {
+  constructor(targetPath = 'src') {
+    this.targetPath = targetPath;
     this.jsxChecker = new JSXHardcodedChecker();
     this.toastChecker = new EnhancedToastChecker({
       // 프로젝트에 맞는 설정 커스터마이징
@@ -81,11 +82,19 @@ class IntegratedHardcodingChecker {
     };
   }
 
-  async runAllChecks() {
+  async runAllChecks(patterns = ['src/**/*.{js,jsx,ts,tsx}']) {
     this.startTime = Date.now();
 
+    // 패턴에서 디렉토리 부분만 추출하여 표시
+    const displayPatterns = patterns.map(p => {
+      if (p.startsWith('!')) {
+        return `!${p.replace('/**/*.{js,jsx,ts,tsx}', '').replace('!', '')}`;
+      }
+      return p.replace('/**/*.{js,jsx,ts,tsx}', '') || 'src';
+    });
+
     console.log(chalk.cyan.bold('🚀 통합 하드코딩 검사 시작\n'));
-    console.log(chalk.gray('프로젝트: purchase-client'));
+    console.log(chalk.gray(`검사 대상: ${displayPatterns.join(' ')}`));
     console.log(chalk.gray('검사 범위: JSX 컴포넌트 + Toast/알림 함수'));
     console.log(chalk.gray('=' * 60));
 
@@ -99,12 +108,12 @@ class IntegratedHardcodingChecker {
       // 1. JSX 하드코딩 검사
       console.log(chalk.blue('\n📋 1단계: JSX 컴포넌트 하드코딩 검사'));
       console.log(chalk.gray('검사 대상: React/JSX 컴포넌트의 텍스트 및 속성'));
-      results.jsx = await this.jsxChecker.checkJSXHardcoding();
+      results.jsx = await this.jsxChecker.checkJSXHardcoding(patterns);
 
       // 2. Toast/알림 하드코딩 검사
       console.log(chalk.blue('\n📋 2단계: Toast/알림 하드코딩 검사'));
       console.log(chalk.gray('검사 대상: message.error, alert, 객체 속성 등'));
-      results.toast = await this.toastChecker.checkFiles(['src/**/*.{js,jsx,ts,tsx}']);
+      results.toast = await this.toastChecker.checkFiles(patterns);
 
       // 결과 요약
       results.overall = results.jsx && results.toast;
@@ -155,47 +164,83 @@ class IntegratedHardcodingChecker {
   // CLI 명령어 처리
   static async handleCLI() {
     const args = process.argv.slice(2);
+    
+    // 경로 패턴 파싱 (여러 패턴 지원)
+    let targetPatterns = [];
+    let options = [];
+    
+    // 기본값은 인수가 없을 때만 사용
+    if (args.length === 0) {
+      targetPatterns = ['src/**/*.{js,jsx,ts,tsx}'];
+    }
+    
+    for (const arg of args) {
+      if (arg.startsWith('--') || arg.startsWith('-')) {
+        options.push(arg);
+      } else {
+        // 모든 비옵션 인수를 패턴으로 추가
+        let pattern = arg;
+        
+        // 자동 패턴 추가 (제외 패턴이 아닌 경우만)
+        if (!pattern.startsWith('!') && !pattern.includes('**/*')) {
+          pattern = `${pattern}/**/*.{js,jsx,ts,tsx}`;
+        }
+        
+        targetPatterns.push(pattern);
+      }
+    }
+    
+    // 디버깅 로그 추가
+    console.log(chalk.gray(`🔍 파싱된 패턴: [${targetPatterns.join(', ')}]`));
+    console.log(chalk.gray(`🔍 옵션: [${options.join(', ')}]`));
+    
     const checker = new IntegratedHardcodingChecker();
 
-    if (args.includes('--help') || args.includes('-h')) {
+    if (options.includes('--help') || options.includes('-h')) {
       console.log(
         chalk.cyan(`
 🔍 하드코딩 검사 도구 (ESM 버전)
 
 사용법:
-  node scripts/check-all-hardcoding.mjs [옵션]
+  node i18n_script/check-all-hardcoding.mjs [경로패턴...] [옵션]
+
+인수:
+  경로패턴           검사할 경로 패턴 (여러 개 가능)
+  !경로패턴          제외할 경로 패턴
 
 옵션:
-  --help, -h     도움말 표시
-  --jsx-only     JSX 검사만 실행
-  --toast-only   Toast/알림 검사만 실행
-  --verbose, -v  상세한 로그 출력
+  --help, -h        도움말 표시
+  --jsx-only        JSX 검사만 실행
+  --toast-only      Toast/알림 검사만 실행
+  --verbose, -v     상세한 로그 출력
 
 예시:
-  pnpm run lint:hardcoded          # 모든 검사 실행
-  pnpm run lint:hardcoded:jsx      # JSX만 검사
-  pnpm run lint:hardcoded:toast    # Toast만 검사
-      `),
+  node i18n_script/check-all-hardcoding.mjs                                    # src 검사
+  node i18n_script/check-all-hardcoding.mjs src !src/test                     # src 검사하되 test 제외
+  node i18n_script/check-all-hardcoding.mjs components !components/legacy     # components 검사하되 legacy 제외
+        `),
       );
       return;
     }
 
-    if (args.includes('--jsx-only')) {
-      console.log(chalk.blue('🔍 JSX 하드코딩 검사만 실행\n'));
-      const result = await checker.jsxChecker.checkJSXHardcoding();
+    if (options.includes('--jsx-only')) {
+      console.log(chalk.blue(`🔍 JSX 하드코딩 검사만 실행\n`));
+      console.log(chalk.gray(`패턴: ${targetPatterns.join(' ')}`));
+      const result = await checker.jsxChecker.checkJSXHardcoding(targetPatterns);
       process.exit(result ? 0 : 1);
       return;
     }
 
-    if (args.includes('--toast-only')) {
-      console.log(chalk.blue('🔍 Toast/알림 하드코딩 검사만 실행\n'));
-      const result = await checker.toastChecker.checkFiles(['src/**/*.{js,jsx,ts,tsx}']);
+    if (options.includes('--toast-only')) {
+      console.log(chalk.blue(`🔍 Toast/알림 하드코딩 검사만 실행\n`));
+      console.log(chalk.gray(`패턴: ${targetPatterns.join(' ')}`));
+      const result = await checker.toastChecker.checkFiles(targetPatterns);
       process.exit(result ? 0 : 1);
       return;
     }
 
     // 기본: 모든 검사 실행
-    await checker.runAllChecks();
+    await checker.runAllChecks(targetPatterns);
   }
 }
 

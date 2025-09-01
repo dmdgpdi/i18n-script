@@ -87,25 +87,29 @@ export default class JSXHardcodedChecker {
   async checkJSXHardcoding(patterns = ['src/**/*.{js,jsx,ts,tsx}']) {
     console.log(chalk.blue('🔍 JSX 하드코딩 검사 시작...\n'));
 
-    const filePatterns = patterns.concat([
-      '!src/**/*.test.{js,jsx,ts,tsx}',
-      '!src/**/*.stories.{js,jsx,ts,tsx}',
-      '!src/**/*.spec.{js,jsx,ts,tsx}',
-      '!**/node_modules/**',
-      '!**/dist/**',
-      '!**/build/**',
-    ]);
+    // 패턴에서 포함/제외 분리
+    const includePatterns = patterns.filter(p => !p.startsWith('!'));
+    const excludePatterns = patterns
+      .filter(p => p.startsWith('!'))
+      .map(p => p.substring(1)); // ! 제거
+
+    const defaultIgnores = [
+      '**/*.test.{js,jsx,ts,tsx}',
+      '**/*.stories.{js,jsx,ts,tsx}',
+      '**/*.spec.{js,jsx,ts,tsx}',
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/build/**',
+    ];
+
+    const allIgnores = [...defaultIgnores, ...excludePatterns];
+
+    console.log(chalk.gray(`📋 포함 패턴: [${includePatterns.join(', ')}]`));
+    console.log(chalk.gray(`📋 제외 패턴: [${excludePatterns.join(', ')}]`));
 
     try {
-      const files = await glob(filePatterns, {
-        ignore: [
-          '**/*.test.{js,jsx,ts,tsx}',
-          '**/*.stories.{js,jsx,ts,tsx}',
-          '**/*.spec.{js,jsx,ts,tsx}',
-          '**/node_modules/**',
-          '**/dist/**',
-          '**/build/**',
-        ],
+      const files = await glob(includePatterns, {
+        ignore: allIgnores,
       });
       console.log(chalk.gray(`📊 검사 대상: ${files.length}개 파일`));
 
