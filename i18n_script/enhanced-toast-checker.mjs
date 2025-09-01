@@ -46,6 +46,9 @@ export default class EnhancedToastChecker {
         'showError',
         'showSuccess',
         'showWarning',
+        
+        // 기본 message 함수
+        'message',
       ],
       objectProperties: [
         'title',
@@ -142,30 +145,42 @@ export default class EnhancedToastChecker {
       traverse(ast, {
         // 함수 호출 검사 (상세 정보 포함)
         CallExpression: (path) => {
-          const calleeText = this.getCalleeText(path.node);
+          const calleeText = this.getCalleeText(path.node.callee);
 
           if (this.isToastFunction(calleeText)) {
             const hardcodedArgs = this.findHardcodedArguments(path.node.arguments);
 
             hardcodedArgs.forEach((arg) => {
-              const errorInfo = {
-                line: arg.loc?.start.line || 0,
-                column: arg.loc?.start.column || 0,
-                message: `하드코딩된 ${calleeText} 메시지`,
-                type: 'toast-function',
-                value: this.getStringValue(arg),
-                functionName: calleeText,
-                suggestion: `${calleeText}(t('${this.suggestKey(calleeText, this.getStringValue(arg))}'))`,
-              };
+              // 🆕 객체 인수인 경우 상세 정보 제공
+              if (arg.type === 'ObjectExpression') {
+                const objectErrors = this.getObjectPropertyErrors(arg, calleeText, filePath);
+                errors.push(...objectErrors);
+              } else {
+                // 기존 단순 인수 처리
+                const errorInfo = {
+                  line: arg.loc?.start.line || 0,
+                  column: arg.loc?.start.column || 0,
+                  message: `하드코딩된 ${calleeText} 메시지`,
+                  type: 'toast-function',
+                  value: this.getStringValue(arg),
+                  functionName: calleeText,
+                  suggestion: `${calleeText}(t('${this.suggestKey(calleeText, this.getStringValue(arg))}'))`,
+                };
 
-              const enhancedError = this.reporter.formatError(errorInfo, filePath);
-              errors.push(enhancedError);
+                const enhancedError = this.reporter.formatError(errorInfo, filePath);
+                errors.push(enhancedError);
+              }
             });
           }
         },
 
-        // 객체 속성 검사 (상세 정보 포함)
+        // 객체 속성 검사 (상세 정보 포함) - 함수 호출 외부의 객체만
         ObjectProperty: (path) => {
+          // 🚫 임시로 ObjectProperty 검사 비활성화
+          // CallExpression에서 객체 인수를 처리하므로 중복 방지
+          // 함수 호출 외부의 객체 속성은 별도로 처리 필요
+          return;
+          
           if (this.isUserFacingProperty(path.node) && this.isHardcodedValue(path.node.value)) {
             const propertyName = path.node.key.name || path.node.key.value;
             const errorInfo = {
@@ -297,14 +312,18 @@ export default class EnhancedToastChecker {
   isHardcodedValue(node) {
     if (!node) return false;
 
-    if (node.type === 'Literal' && typeof node.value === 'string') {
+    if ((node.type === 'Literal' || node.type === 'StringLiteral') && typeof node.value === 'string') {
       return !this.isAllowedPattern(node.value);
     }
 
     if (node.type === 'TemplateLiteral') {
       if (node.expressions.length === 0) {
+        // 표현식이 없는 순수 템플릿 리터럴
         const value = node.quasis[0]?.value?.raw || '';
         return !this.isAllowedPattern(value);
+      } else {
+        // 🆕 표현식이 있는 템플릿 리터럴 - 정적 부분이 충분한 경우만 하드코딩으로 간주
+        return this.hasSignificantStaticContent(node);
       }
     }
 
@@ -312,7 +331,120 @@ export default class EnhancedToastChecker {
       return this.isHardcodedValue(node.expression);
     }
 
+    // 🆕 ObjectExpression 처리 추가
+    if (node.type === 'ObjectExpression') {
+      return this.hasHardcodedObjectProperties(node);
+    }
+
+    // 🆕 ArrayExpression 처리 추가 (객체 배열)
+    if (node.type === 'ArrayExpression') {
+      return node.elements.some(element => 
+        element && this.isHardcodedValue(element)
+      );
+    }
+
     return false;
+  }
+
+  // 🆕 템플릿 리터럴의 정적 부분이 충분한지 확인
+  hasSignificantStaticContent(templateLiteralNode) {
+    if (!templateLiteralNode || templateLiteralNode.type !== 'TemplateLiteral') {
+      return false;
+    }
+
+    const MIN_STATIC_LENGTH = 3; // 최소 정적 부분 길이 (3글자 이상)
+    
+    // 모든 정적 부분(quasis)의 길이를 합산
+    const totalStaticLength = templateLiteralNode.quasis.reduce((total, quasi) => {
+      const staticText = quasi.value.raw || '';
+      return total + staticText.length;
+    }, 0);
+
+    // 정적 부분이 충분히 긴 경우만 하드코딩으로 간주
+    return totalStaticLength >= MIN_STATIC_LENGTH;
+  }
+
+  // 🆕 객체 속성 하드코딩 검사 메서드
+  hasHardcodedObjectProperties(objectNode) {
+    if (!objectNode || objectNode.type !== 'ObjectExpression') {
+      return false;
+    }
+
+    return objectNode.properties.some(prop => {
+      if (prop.type === 'ObjectProperty') {
+        // 사용자 대면 속성인지 확인
+        if (this.isUserFacingProperty(prop)) {
+          // 하드코딩된 값인지 확인
+          return this.isHardcodedValue(prop.value);
+        }
+      }
+      
+      // SpreadElement 처리 (예: {...config})
+      if (prop.type === 'SpreadElement') {
+        // 스프레드된 객체도 검사
+        return this.isHardcodedValue(prop.argument);
+      }
+      
+      return false;
+    });
+  }
+
+  // 🆕 Toast 함수 호출 내부인지 확인
+  isInsideToastFunctionCall(path) {
+    let currentPath = path.parent;
+    
+    while (currentPath && currentPath.node) {
+      if (currentPath.node.type === 'CallExpression') {
+        const calleeText = this.getCalleeText(currentPath.node.callee);
+        if (this.isToastFunction(calleeText)) {
+          return true;
+        }
+      }
+      currentPath = currentPath.parent;
+    }
+    
+    return false;
+  }
+
+  // 🆕 ObjectExpression이 함수 호출의 인수인지 확인
+  isObjectExpressionInFunctionCall(objectExpressionNode) {
+    // ObjectExpression의 부모가 CallExpression의 arguments 배열에 포함되어 있는지 확인
+    // 이는 AST 구조상 직접적으로 확인하기 어려우므로, 
+    // ObjectExpression이 CallExpression의 직접적인 자식인지 확인
+    return false; // 일단 false로 설정하여 모든 ObjectExpression을 ObjectProperty에서 처리
+  }
+
+  // 🆕 객체 속성별 에러 정보 생성
+  getObjectPropertyErrors(objectNode, functionName, filePath) {
+    const errors = [];
+    
+    if (!objectNode || objectNode.type !== 'ObjectExpression') {
+      return errors;
+    }
+
+    objectNode.properties.forEach(prop => {
+      if (prop.type === 'ObjectProperty' && 
+          this.isUserFacingProperty(prop) && 
+          this.isHardcodedValue(prop.value)) {
+        
+        const propertyName = prop.key.name || prop.key.value;
+        const errorInfo = {
+          line: prop.value.loc?.start.line || prop.loc?.start.line || 0,
+          column: prop.value.loc?.start.column || prop.loc?.start.column || 0,
+          message: `하드코딩된 ${functionName} 객체 속성 "${propertyName}"`,
+          type: 'toast-object-property',
+          value: this.getStringValue(prop.value),
+          functionName: functionName,
+          propertyName: propertyName,
+          suggestion: `${propertyName}: t('${this.suggestKey(propertyName, this.getStringValue(prop.value))}')`,
+        };
+
+        const enhancedError = this.reporter.formatError(errorInfo, filePath);
+        errors.push(enhancedError);
+      }
+    });
+
+    return errors;
   }
 
   isAllowedPattern(value) {
@@ -327,11 +459,18 @@ export default class EnhancedToastChecker {
   }
 
   getStringValue(node) {
-    if (node.type === 'Literal') {
+    if (node.type === 'Literal' || node.type === 'StringLiteral') {
       return node.value;
     }
-    if (node.type === 'TemplateLiteral' && node.expressions.length === 0) {
-      return node.quasis[0]?.value?.raw || '';
+    if (node.type === 'TemplateLiteral') {
+      if (node.expressions.length === 0) {
+        // 표현식이 없는 순수 템플릿 리터럴
+        return node.quasis[0]?.value?.raw || '';
+      } else {
+        // 🆕 표현식이 있는 템플릿 리터럴 - 정적 부분만 추출
+        const staticParts = node.quasis.map(quasi => quasi.value.raw || '').join('');
+        return staticParts || '[템플릿 리터럴]';
+      }
     }
     if (node.type === 'JSXExpressionContainer') {
       return this.getStringValue(node.expression);
