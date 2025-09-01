@@ -35,34 +35,10 @@ export default class JSXHardcodedChecker {
         },
       },
       // 프로젝트 특정 모듈 설정
-      modules: {
-        // Kosmos 컴포넌트들
-        '@healingpaper-solution/kosmos-message': {
-          Message: {
-            allowStrings: false,
-            checkProps: ['children', 'description'],
-          },
-        },
-        '@healingpaper-solution/kosmos-modal': {
-          Modal: {
-            allowStrings: false,
-            checkProps: ['title', 'children'],
-          },
-        },
-        '@healingpaper-solution/kosmos-banner': {
-          Banner: {
-            allowStrings: false,
-            checkProps: ['title', 'description', 'children'],
-          },
-        },
-        '@healingpaper-solution/kosmos-tooltip': {
-          Tooltip: {
-            allowStrings: false,
-            checkProps: ['title', 'content', 'children'],
-          },
-        },
-        // Ant Design 컴포넌트들
-        antd: {
+        /**
+         * @description 특정 라이브러리 모듈을 검사하고 싶다면 다음과 같이 하세요.
+         * @example
+         * antd: {
           Button: {
             allowStrings: false,
             checkProps: ['children'],
@@ -80,6 +56,9 @@ export default class JSXHardcodedChecker {
             checkProps: ['title', 'children'],
           },
         },
+         */
+      modules: {
+
       },
     };
   }
