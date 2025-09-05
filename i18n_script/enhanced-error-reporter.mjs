@@ -121,8 +121,7 @@ export default class EnhancedErrorReporter {
       report.push('\n' + chalk.gray('─'.repeat(80)) + '\n');
     });
 
-    // 수정 가이드 추가
-    report.push(this.generateFixGuide());
+
 
     return report.join('\n');
   }
@@ -136,15 +135,5 @@ export default class EnhancedErrorReporter {
       groups[file].push(error);
       return groups;
     }, {});
-  }
-
-  generateFixGuide() {
-    return chalk.cyan.bold(`
-📚 수정 가이드:
-${chalk.cyan('1. JSX 텍스트:')} <div>하드코딩</div> → <div>{t('key')}</div>
-${chalk.cyan('2. 속성 값:')} <img alt="하드코딩" /> → <img alt={t('alt.key')} />
-${chalk.cyan('3. Toast 메시지:')} message.error('하드코딩') → message.error(t('error.key'))
-${chalk.cyan('4. 객체 속성:')} title: '하드코딩' → title: t('title.key')
-`);
   }
 }

@@ -148,14 +148,9 @@ class IntegratedHardcodingChecker {
     if (results.overall) {
       console.log(chalk.green.bold('🎉 모든 하드코딩 검사 통과!'));
       console.log(chalk.green('국제화(i18n) 준비가 잘 되어있습니다.'));
-      console.log(chalk.green('새로운 텍스트 추가 시에도 t() 함수를 사용해주세요.'));
     } else {
       console.log(chalk.red.bold('🚨 하드코딩이 발견되었습니다!'));
       console.log(chalk.yellow('위의 에러들을 수정한 후 다시 실행해주세요.'));
-      console.log(chalk.yellow('수정 방법:'));
-      console.log(chalk.yellow("  - JSX: <div>텍스트</div> → <div>{t('key')}</div>"));
-      console.log(chalk.yellow("  - 함수: message.error('텍스트') → message.error(t('error.key'))"));
-      console.log(chalk.yellow('  - 속성: title="텍스트" → title={t(\'title.key\')}'));
     }
 
     console.log(chalk.gray('='.repeat(60)));
