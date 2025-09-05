@@ -19,16 +19,16 @@ export interface CodeError {
    * 에러 타입
    */
   type: string;
-
-  /**
-   * 에러 컨텍스트
-   */
-  context: string[];
   
   /**
    * 에러 값
    */
   value: string;
+
+  /**
+   * 코드 스니펫 (에러 위치 표시)
+   */
+  codeSnippet: string;
 }
 
 
